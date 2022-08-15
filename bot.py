@@ -17,32 +17,65 @@ CODERBYTE_URL = "https://coderbyte.com/sl-org"
 USERNAME = "william.cirico@proway.com.br"
 PASSWORD = "Pr0w4!@2022"
 
-def formatScore(score: str) -> float:
+def remove_duplicates(scores: List[Tuple[float, str]]) -> List[Tuple[float, str]]:
+    new_data = {}
+    for score, email in scores:
+        if email in new_data:
+            if score < new_data[email][0]:
+                continue
+        else:
+            new_data[email] = [score, email]
+
+    return [[new_data[email][0], email] for email in new_data]
+
+
+def format_score(score: str) -> float:
     """Formats the score in '%d' format to float"""
     return float(score.replace("%", ""))
 
-def getScoresFromAssesment(driver: any, assesmentURL: str) -> List[Tuple[float, str]]:
+def calculate_final_score(multiple_choice_scores: List[float], code_scores: List[float], multiple_choice_weight: float, code_weight: float) -> List[float]:
+    """Calculates the final score of tests based on the weight of the constants """
+    final_scores = []
+    for (multiple_choice_score, code_score) in zip(multiple_choice_scores, code_scores):
+        final_score = (multiple_choice_score * multiple_choice_weight + code_score * code_weight) / (code_weight + multiple_choice_weight)
+        final_scores.append(final_score)
+
+    return final_scores
+
+
+def get_scores_from_assesment(driver: any, assesmentURL: str, multiple_choice_weight: float, code_weight: float, status: str) -> List[Tuple[float, str]]:
     """Returns the scores from an acessment"""
     driver.get(assesmentURL)
 
-    # Obtendo os testes
-    scores_elements = driver.find_elements(By.XPATH, "//span[contains(., 'Submitted')]/following-sibling::span[contains(@class, 'score')]")
-    emails_elements = driver.find_elements(By.XPATH, "//span[contains(., 'Submitted')]/preceding-sibling::span[1]")
-    
-    # Convertendo os scores
-    formatted_scores = list(map(lambda score: formatScore(score.text), scores_elements))
+    # Obtendo os e-mails e scores
+    if status == "" or status == "submitted":
+        emails_elements = driver.find_elements(By.XPATH, "//span[contains(., 'Submitted')]/preceding-sibling::span[1]")
+        scores_elements = driver.find_elements(By.XPATH, "//span[contains(., 'Submitted')]/following-sibling::span[contains(@class, 'score')]")
+    else:    
+        emails_elements = driver.find_elements(By.CSS_SELECTOR, ".candidateRow > span:nth-child(2)")
+        scores_elements = driver.find_elements(By.CLASS_NAME, "score")
+
+    # Obtendo o score das questões de múltipla escolha
+    driver.find_element(By.XPATH, "//option[@value='mc_score']").click()
+    multiple_choice_scores = list(map(lambda score: format_score(score.text), scores_elements))
+
+    # Obtendo o score dos desafios de programação
+    driver.find_element(By.XPATH, "//option[@value='code_score']").click()    
+    code_scores = list(map(lambda score: format_score(score.text), scores_elements))
+
+    # Obtendo o score final
+    final_scores = calculate_final_score(multiple_choice_scores, code_scores, multiple_choice_weight, code_weight)
 
     # Obtendo os emails
     emails = list(map(lambda email: email.text, emails_elements))
 
-    # Juntando score e email em tuplas
-    return list(zip(formatted_scores, emails))
+    return list(zip(final_scores, emails))
 
+    
 
-def getSubmittedAssesmentsFromUrl(assesment_url: str, assessment_name: str) -> any:
-    """Get all the sumitted assesments from an URL"""
-    driver = webdriver.Chrome()
-    driver.get(assesment_url)
+def get_links_from_assessment(driver: any, assessment_url: str, assessment_name: str) -> List[str]:
+    """Get all the sumitted assesments from an URL"""    
+    driver.get(assessment_url)
 
     # Realizando o login
     [email_input, pass_input] = driver.find_elements(By.CLASS_NAME, "login-field-input")
@@ -59,19 +92,11 @@ def getSubmittedAssesmentsFromUrl(assesment_url: str, assessment_name: str) -> a
     
     # Obtendo os links
     links = list(map(lambda x: x.get_attribute("href"), assesments_links))
-        
-    # Obtendo a lista de scores
-    scores_lists = list(map(lambda x: getScoresFromAssesment(driver, x), links))
 
-    driver.close()
-
-    # Achatando a lista de resultados
-    scores =list(itertools.chain(*scores_lists))
-
-    return scores
+    return links
 
 
-def saveChallengesInDB(assessment_scores: List[Tuple[float, str]], project_id: int):
+def save_challenges_in_db(assessments_scores: List[Tuple[float, str]], project_id: int):
     """Saves the scores from an assesment in the DB"""
     try:
         with mysql.connector.connect(
@@ -83,10 +108,10 @@ def saveChallengesInDB(assessment_scores: List[Tuple[float, str]], project_id: i
             with connection.cursor() as cursor:            
                 sql = f"UPDATE inscritos SET nota_teste = %s WHERE email = %s AND projeto_id = {project_id}"
 
-                for assessment_score in assesments_scores:                    
+                for assessment_score in assessments_scores:                    
                     cursor.execute(sql, assessment_score)
                 
-                connection.commit()
+                connection.commit()                
     except mysql.connector.Error as e:
         print(e)
 
@@ -94,12 +119,33 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--assessment-name", "-an", help="assessment name", type=str)
     parser.add_argument("--project-id", "-p", help="project id", type=int)
+    parser.add_argument("--multiple-choice-weight", "-mcw", help="weight of the multiple choice questions", type=float)
+    parser.add_argument("--code-weight", "-cw", help="weight of the code challenges", type=float)
+    parser.add_argument("--status", "-s", help="status of challenge (submitted || all)", type=float)
     args = parser.parse_args()
 
     if not args.assessment_name or not args.project_id:
         print("Você precisa informar o nome do desafio e o ID do projeto")
         sys.exit()
 
-    assesments_scores = getSubmittedAssesmentsFromUrl(CODERBYTE_URL, args.assessment_name)
-    saveChallengesInDB(assesments_scores, args.project_id)
+    if not args.multiple_choice_weight or not args.code_weight:
+        print("Você precisa informar o peso das questões de múltipla escolha e o peso dos desafios de programação")
+        sys.exit()
+    
+    if (args.multiple_choice_weight + args.code_weight) != 100:
+        print("Peso das questões informado deve totalizar 100%")
+        sys.exit()
+
+    driver = webdriver.Chrome()
+    assessment_links = get_links_from_assessment(driver, CODERBYTE_URL, args.assessment_name)
+    scores_list = list(map(lambda x: get_scores_from_assesment(driver, x, args.multiple_choice_weight, args.code_weight, args.status), assessment_links))
+    # assessment_links = get_links_from_assessment(driver, CODERBYTE_URL, "+Devs2Blu")
+    # scores_list = list(map(lambda x: get_scores_from_assesment(driver, x, 40, 60), assessment_links))
+    driver.close()
+
+    # Achatando a lista de resultados
+    scores = list(itertools.chain(*scores_list))
+
+    formatted_scores_list = remove_duplicates(scores)
+    save_challenges_in_db(formatted_scores_list, args.project_id)
     print("Desafios cadastrados 😄")
