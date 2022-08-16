@@ -20,13 +20,10 @@ PASSWORD = "Pr0w4!@2022"
 def remove_duplicates(scores: List[Tuple[float, str]]) -> List[Tuple[float, str]]:
     new_data = {}
     for score, email in scores:
-        if email in new_data:
-            if score < new_data[email][0]:
-                continue
-        else:
-            new_data[email] = [score, email]
-
-    return [[new_data[email][0], email] for email in new_data]
+        if email not in new_data or score >= new_data[email]:
+            new_data[email] = score
+            
+    return [(new_data[email], email) for email in new_data]
 
 
 def format_score(score: str) -> float:
@@ -43,15 +40,15 @@ def calculate_final_score(multiple_choice_scores: List[float], code_scores: List
     return final_scores
 
 
-def get_scores_from_assesment(driver: any, assesmentURL: str, multiple_choice_weight: float, code_weight: float, status: str) -> List[Tuple[float, str]]:
+def get_scores_from_assesment(driver: any, assesmentURL: str, multiple_choice_weight: float, code_weight: float, status: str = "submitted") -> List[Tuple[float, str]]:
     """Returns the scores from an acessment"""
     driver.get(assesmentURL)
 
     # Obtendo os e-mails e scores
-    if status == "" or status == "submitted":
+    if status == "submitted" or status == None:
         emails_elements = driver.find_elements(By.XPATH, "//span[contains(., 'Submitted')]/preceding-sibling::span[1]")
         scores_elements = driver.find_elements(By.XPATH, "//span[contains(., 'Submitted')]/following-sibling::span[contains(@class, 'score')]")
-    else:    
+    elif status == "all":    
         emails_elements = driver.find_elements(By.CSS_SELECTOR, ".candidateRow > span:nth-child(2)")
         scores_elements = driver.find_elements(By.CLASS_NAME, "score")
 
@@ -121,7 +118,7 @@ if __name__ == "__main__":
     parser.add_argument("--project-id", "-p", help="project id", type=int)
     parser.add_argument("--multiple-choice-weight", "-mcw", help="weight of the multiple choice questions", type=float)
     parser.add_argument("--code-weight", "-cw", help="weight of the code challenges", type=float)
-    parser.add_argument("--status", "-s", help="status of challenge (submitted || all)", type=float)
+    parser.add_argument("--status", "-s", help="status of challenge (submitted || all)", type=str)
     args = parser.parse_args()
 
     if not args.assessment_name or not args.project_id:
@@ -139,13 +136,14 @@ if __name__ == "__main__":
     driver = webdriver.Chrome()
     assessment_links = get_links_from_assessment(driver, CODERBYTE_URL, args.assessment_name)
     scores_list = list(map(lambda x: get_scores_from_assesment(driver, x, args.multiple_choice_weight, args.code_weight, args.status), assessment_links))
-    # assessment_links = get_links_from_assessment(driver, CODERBYTE_URL, "+Devs2Blu")
-    # scores_list = list(map(lambda x: get_scores_from_assesment(driver, x, 40, 60), assessment_links))
+    # assessment_links = get_links_from_assessment(driver, CODERBYTE_URL, "T-Academy")
+    # scores_list = list(map(lambda x: get_scores_from_assesment(driver, x, 30, 70, None), assessment_links))
     driver.close()
 
     # Achatando a lista de resultados
     scores = list(itertools.chain(*scores_list))
 
     formatted_scores_list = remove_duplicates(scores)
+
     save_challenges_in_db(formatted_scores_list, args.project_id)
-    print("Desafios cadastrados 😄")
+    print("Desafios cadastrados :D")
