@@ -15,7 +15,7 @@ import mysql.connector
 
 CODERBYTE_URL = "https://coderbyte.com/sl-org"
 USERNAME = "william.cirico@proway.com.br"
-PASSWORD = "Pr0w4!@2022"
+PASSWORD = "X*&ricr6*LS4"
 
 def remove_duplicates(scores: List[Tuple[float, str]]) -> List[Tuple[float, str]]:
     new_data = {}
@@ -75,13 +75,13 @@ def get_links_from_assessment(driver: any, assessment_url: str, assessment_name:
     driver.get(assessment_url)
 
     # Realizando o login
-    [email_input, pass_input] = driver.find_elements(By.CLASS_NAME, "login-field-input")
-    email_input.send_keys(USERNAME)
-    pass_input.send_keys(PASSWORD)
-    driver.find_element(By.XPATH, "//button[text()='login']").click()    
+    driver.find_element(By.CLASS_NAME, "login-field-input").send_keys(USERNAME)
+    driver.find_element(By.CLASS_NAME, "nextButton").click()    
+    wait = WebDriverWait(driver, 10)
+    wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@type='password']"))).send_keys(PASSWORD)
+    driver.find_element(By.XPATH, "//button[text()='Log in']").click()    
 
     # Navegando para a página de avaliações
-    wait = WebDriverWait(driver, 10)
     wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Assessments"))).click()
     
     # Localizando os links dos desafios
